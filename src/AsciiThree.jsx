@@ -194,12 +194,13 @@ export default function AsciiThree() {
       buildShape(idx, false)
     }
 
-    // Text cursor state — reset when a fresh sequence starts
-    let typedOrigin = null  // first char's base in local space
-    let typedDir    = null  // advance direction per character (local space)
-    let typedCount  = 0     // chars typed in current sequence
+    // Text cursor — geodesic placement (rotation-based, wraps around surface)
+    let typedStart     = null   // anchor point in local space
+    let typedAxis      = null   // rotation axis (tangent to surface)
+    let typedCharAngle = 0      // radians per character = CHAR_SPACING / radius
+    let typedCount     = 0
 
-    const CHAR_SPACING = 0.42
+    const CHAR_SPACING = 0.40
 
     function spawnTyped(char) {
       const idx = stateRef.current.currentShapeIdx
@@ -209,22 +210,25 @@ export default function AsciiThree() {
         const geo = SHAPES[idx].geo()
         const pos = geo.attributes.position
         const i   = Math.floor(Math.random() * pos.count)
-        typedOrigin = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i))
+        typedStart = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i))
         geo.dispose()
 
-        // Direction tangent to surface at that point (perpendicular to radial)
-        const radial    = typedOrigin.clone().normalize()
+        // Rotation axis: perpendicular to radial — text curves around the shape
+        const radial    = typedStart.clone().normalize()
         const arbitrary = Math.abs(radial.y) < 0.9
           ? new THREE.Vector3(0, 1, 0)
           : new THREE.Vector3(1, 0, 0)
-        typedDir = new THREE.Vector3()
+        typedAxis = new THREE.Vector3()
           .crossVectors(radial, arbitrary)
           .normalize()
-          .multiplyScalar(CHAR_SPACING)
+
+        // Arc-length-correct angle: arc = radius × angle → angle = spacing / radius
+        const radius = Math.max(0.5, typedStart.length())
+        typedCharAngle = CHAR_SPACING / radius
       }
 
-      // Place char at cursor position in local (pre-rotation) space
-      const base = typedOrigin.clone().add(typedDir.clone().multiplyScalar(typedCount))
+      // Geodesic: rotate anchor by n × charAngle around axis
+      const base = typedStart.clone().applyAxisAngle(typedAxis, typedCount * typedCharAngle)
 
       stateRef.current.particles.push({
         base,
