@@ -107,9 +107,10 @@ export default function AsciiThree() {
     overlay.height = H
     const ctx = overlay.getContext('2d')
 
-    const _euler  = new THREE.Euler()
-    const _target = new THREE.Vector3()
-    const _spring = new THREE.Vector3()
+    const _euler   = new THREE.Euler()
+    const _target  = new THREE.Vector3()
+    const _spring  = new THREE.Vector3()
+    const _viewVec = new THREE.Vector3()
 
     function makeMesh(idx) {
       const s = stateRef.current
@@ -205,9 +206,15 @@ export default function AsciiThree() {
     renderer.domElement.addEventListener('mousemove', onMove)
     renderer.domElement.addEventListener('mouseup',   onUp)
 
-    function project(p) {
-      const v = p.pos.clone().project(camera)
-      return { x: (v.x * 0.5 + 0.5) * W, y: (-v.y * 0.5 + 0.5) * H, z: v.z }
+    function project(p, camDist) {
+      // View-space z for depth: NDC z clusters ~0.97-0.99 for all our particles
+      // (near=0.1, far=100 crushes the useful range), so compute depth directly.
+      _viewVec.copy(p.pos).applyMatrix4(camera.matrixWorldInverse)
+      const viewDist = -_viewVec.z  // positive distance along camera forward axis
+      // depth 1 = near face (bright/large), depth 0 = far face (dim/small)
+      const depth = Math.max(0, Math.min(1, 1 - (viewDist - (camDist - 3.5)) / 7))
+      const sv = p.pos.clone().project(camera)
+      return { x: (sv.x * 0.5 + 0.5) * W, y: (-sv.y * 0.5 + 0.5) * H, z: sv.z, depth }
     }
 
     let t = 0, raf
@@ -250,14 +257,15 @@ export default function AsciiThree() {
 
       // ASCII overlay
       ctx.clearRect(0, 0, W, H)
+      const camDist = camera.position.length()
       const sorted = particles
-        .map(p => ({ p, sc: project(p) }))
+        .map(p => ({ p, sc: project(p, camDist) }))
         .filter(({ sc }) => sc.z > -1 && sc.z < 1)
-        .sort((a, b) => b.sc.z - a.sc.z)
+        .sort((a, b) => b.sc.depth - a.sc.depth)  // back (low depth) drawn first
 
       ctx.shadowBlur = 0
       for (const { p, sc } of sorted) {
-        const depth      = Math.max(0, Math.min(1, (1 - sc.z) / 2))
+        const depth = sc.depth
         const alpha      = depth * 0.88 + 0.12
         const size       = Math.max(6, Math.floor(depth * 22 * sz))
         const adjustedL  = Math.min(100, p.lit * tb)
