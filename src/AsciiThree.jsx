@@ -243,6 +243,7 @@ export default function AsciiThree() {
 
     const onKeyDown = (e) => {
       if (e.key === 'Backspace') {
+        e.preventDefault()
         const ps = stateRef.current.particles
         for (let i = ps.length - 1; i >= 0; i--) {
           if (ps[i].isTyped) { ps.splice(i, 1); typedCount--; break }
@@ -250,6 +251,7 @@ export default function AsciiThree() {
         return
       }
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault()
         spawnTyped(e.key)
       }
     }
@@ -452,6 +454,7 @@ export default function AsciiThree() {
         {SHAPES.map((s, i) => (
           <button
             key={s.name}
+            tabIndex={-1}
             onClick={() => {
               stateRef.current.switchShape(i)
               setActive(i)
