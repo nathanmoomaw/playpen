@@ -186,8 +186,55 @@ export default function AsciiThree() {
       else transitionParticles(idx)
     }
 
+    stateRef.current.currentShapeIdx = 0
     buildShape(0, true)
-    stateRef.current.switchShape = (idx) => buildShape(idx, false)
+    stateRef.current.switchShape = (idx) => {
+      stateRef.current.currentShapeIdx = idx
+      buildShape(idx, false)
+    }
+
+    // Typed-character particles
+    function spawnTyped(char) {
+      const idx = stateRef.current.currentShapeIdx
+      const geo = SHAPES[idx].geo()
+      const pos = geo.attributes.position
+      const i   = Math.floor(Math.random() * pos.count)
+      const base = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i))
+      geo.dispose()
+      stateRef.current.particles.push({
+        base,
+        pos: base.clone().add(new THREE.Vector3(
+          (Math.random() - 0.5) * 0.3,
+          (Math.random() - 0.5) * 0.3,
+          (Math.random() - 0.5) * 0.3,
+        )),
+        vel: new THREE.Vector3(
+          (Math.random() - 0.5) * 0.08,
+          (Math.random() - 0.5) * 0.08,
+          (Math.random() - 0.5) * 0.08,
+        ),
+        char,
+        phase: Math.random() * Math.PI * 2,
+        freq:  0.25 + Math.random() * 0.4,  // slow dance → legible
+        amp:   0.02 + Math.random() * 0.03,  // tight to surface
+        hue: 55, sat: 10, lit: 96,           // near-white cream
+        isTyped: true,
+      })
+    }
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Backspace') {
+        const ps = stateRef.current.particles
+        for (let i = ps.length - 1; i >= 0; i--) {
+          if (ps[i].isTyped) { ps.splice(i, 1); break }
+        }
+        return
+      }
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        spawnTyped(e.key)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
 
     let wasDragging = false
     const onDown = () => { wasDragging = false }
@@ -266,17 +313,26 @@ export default function AsciiThree() {
       ctx.shadowBlur = 0
       for (const { p, sc } of sorted) {
         const depth = sc.depth
-        const alpha      = depth * 0.88 + 0.12
-        const size       = Math.max(6, Math.floor(depth * 22 * sz))
-        const adjustedL  = Math.min(100, p.lit * tb)
-        ctx.font = `${size}px 'Courier New', monospace`
-        if (depth > 0.55) {
-          ctx.shadowColor = `hsla(${p.hue},${p.sat}%,${adjustedL}%,0.7)`
-          ctx.shadowBlur  = size * 1.4
+        const alpha = depth * 0.88 + 0.12
+        const size  = Math.max(6, Math.floor(depth * 22 * sz))
+
+        if (p.isTyped) {
+          const litVal = Math.min(100, p.lit * tb)
+          ctx.font        = `bold ${size}px 'Courier New', monospace`
+          ctx.shadowColor = `rgba(255,250,220,0.95)`
+          ctx.shadowBlur  = size * 2.2
+          ctx.fillStyle   = `hsla(55,10%,${litVal}%,${(alpha * 1.1).toFixed(2)})`
         } else {
-          ctx.shadowBlur = 0
+          const adjustedL = Math.min(100, p.lit * tb)
+          ctx.font = `${size}px 'Courier New', monospace`
+          if (depth > 0.55) {
+            ctx.shadowColor = `hsla(${p.hue},${p.sat}%,${adjustedL}%,0.7)`
+            ctx.shadowBlur  = size * 1.4
+          } else {
+            ctx.shadowBlur = 0
+          }
+          ctx.fillStyle = `hsla(${p.hue},${p.sat}%,${adjustedL}%,${alpha.toFixed(2)})`
         }
-        ctx.fillStyle = `hsla(${p.hue},${p.sat}%,${adjustedL}%,${alpha.toFixed(2)})`
         ctx.fillText(p.char, sc.x, sc.y)
       }
       ctx.shadowBlur = 0
@@ -298,6 +354,7 @@ export default function AsciiThree() {
     return () => {
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', onResize)
+      window.removeEventListener('keydown', onKeyDown)
       renderer.domElement.removeEventListener('mousedown', onDown)
       renderer.domElement.removeEventListener('mousemove', onMove)
       renderer.domElement.removeEventListener('mouseup',   onUp)
@@ -347,7 +404,9 @@ export default function AsciiThree() {
       }}>
         drag to orbit<br />
         scroll to zoom<br />
-        click to explode
+        click to explode<br />
+        type to add text<br />
+        ⌫ to remove
       </div>
 
       {/* Brightness sliders */}
