@@ -60,10 +60,10 @@ export default function AsciiThree() {
   const overlayRef  = useRef(null)
   const bgRef       = useRef(null)
   const stateRef    = useRef({ particles: [], mesh: null, lights: null, solidMat: null, wireMat: null })
-  const brightRef   = useRef({ bg: 1, shapes: 1, text: 1 })
+  const brightRef   = useRef({ bg: 1, shapes: 1, text: 1, size: 1 })
 
   const [active, setActive] = useState(0)
-  const [bright, setBright] = useState({ bg: 1, shapes: 1, text: 1 })
+  const [bright, setBright] = useState({ bg: 1, shapes: 1, text: 1, size: 1 })
 
   function setBrightKey(key, val) {
     brightRef.current[key] = val
@@ -217,7 +217,7 @@ export default function AsciiThree() {
       t += 0.016
 
       const { mesh, particles, lights, solidMat, wireMat } = stateRef.current
-      const { shapes: sb, text: tb } = brightRef.current
+      const { shapes: sb, text: tb, size: sz } = brightRef.current
 
       // Shape brightness — lights + material opacity
       if (lights) {
@@ -259,7 +259,7 @@ export default function AsciiThree() {
       for (const { p, sc } of sorted) {
         const depth      = Math.max(0, Math.min(1, (1 - sc.z) / 2))
         const alpha      = depth * 0.88 + 0.12
-        const size       = Math.max(7, Math.floor(depth * 15))
+        const size       = Math.max(4, Math.floor(depth * 15 * sz))
         const adjustedL  = Math.min(100, p.lit * tb)
         ctx.font = `${size}px 'Courier New', monospace`
         if (depth > 0.55) {
@@ -354,6 +354,7 @@ export default function AsciiThree() {
         <Slider label="bg"     value={bright.bg}     onChange={v => setBrightKey('bg', v)} />
         <Slider label="shapes" value={bright.shapes}  onChange={v => setBrightKey('shapes', v)} />
         <Slider label="text"   value={bright.text}    onChange={v => setBrightKey('text', v)} />
+        <Slider label="size"   value={bright.size}    onChange={v => setBrightKey('size', v)} />
       </div>
 
       {/* Shape buttons */}
