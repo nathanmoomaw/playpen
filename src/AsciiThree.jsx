@@ -34,7 +34,7 @@ function sampleGeo(geo, count) {
 const SOLID_OPACITY_BASE = 0.2
 const WIRE_OPACITY_BASE  = 0.45
 
-function Slider({ label, value, onChange }) {
+function Slider({ label, value, onChange, max = 2 }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4, cursor: 'pointer' }}>
       <span style={{
@@ -46,7 +46,7 @@ function Slider({ label, value, onChange }) {
         {label}
       </span>
       <input
-        type="range" min="0" max="2" step="0.01"
+        type="range" min="0" max={max} step="0.01"
         value={value}
         onChange={e => onChange(parseFloat(e.target.value))}
         style={{ width: 100, accentColor: '#00cc88', cursor: 'pointer' }}
@@ -60,10 +60,10 @@ export default function AsciiThree() {
   const overlayRef  = useRef(null)
   const bgRef       = useRef(null)
   const stateRef    = useRef({ particles: [], mesh: null, lights: null, solidMat: null, wireMat: null })
-  const brightRef   = useRef({ bg: 1, shapes: 1, text: 1, size: 1 })
+  const brightRef   = useRef({ bg: 1, shapes: 1, text: 1, size: 1.5 })
 
   const [active, setActive] = useState(0)
-  const [bright, setBright] = useState({ bg: 1, shapes: 1, text: 1, size: 1 })
+  const [bright, setBright] = useState({ bg: 1, shapes: 1, text: 1, size: 1.5 })
 
   function setBrightKey(key, val) {
     brightRef.current[key] = val
@@ -259,7 +259,7 @@ export default function AsciiThree() {
       for (const { p, sc } of sorted) {
         const depth      = Math.max(0, Math.min(1, (1 - sc.z) / 2))
         const alpha      = depth * 0.88 + 0.12
-        const size       = Math.max(4, Math.floor(depth * 15 * sz))
+        const size       = Math.max(6, Math.floor(depth * 22 * sz))
         const adjustedL  = Math.min(100, p.lit * tb)
         ctx.font = `${size}px 'Courier New', monospace`
         if (depth > 0.55) {
@@ -354,7 +354,7 @@ export default function AsciiThree() {
         <Slider label="bg"     value={bright.bg}     onChange={v => setBrightKey('bg', v)} />
         <Slider label="shapes" value={bright.shapes}  onChange={v => setBrightKey('shapes', v)} />
         <Slider label="text"   value={bright.text}    onChange={v => setBrightKey('text', v)} />
-        <Slider label="size"   value={bright.size}    onChange={v => setBrightKey('size', v)} />
+        <Slider label="size"   value={bright.size}    onChange={v => setBrightKey('size', v)} max={3} />
       </div>
 
       {/* Shape buttons */}
