@@ -170,6 +170,7 @@ export default function AsciiThree() {
       const pos = geo.attributes.position
       const vn  = pos.count
       stateRef.current.particles.forEach(p => {
+        if (p.isTyped) return  // preserve typed chars' local-space positions
         const i = Math.floor(Math.random() * vn)
         p.base.set(
           pos.getX(i) + (Math.random() - 0.5) * 0.15,
@@ -193,40 +194,58 @@ export default function AsciiThree() {
       buildShape(idx, false)
     }
 
-    // Typed-character particles
+    // Text cursor state — reset when a fresh sequence starts
+    let typedOrigin = null  // first char's base in local space
+    let typedDir    = null  // advance direction per character (local space)
+    let typedCount  = 0     // chars typed in current sequence
+
+    const CHAR_SPACING = 0.42
+
     function spawnTyped(char) {
       const idx = stateRef.current.currentShapeIdx
-      const geo = SHAPES[idx].geo()
-      const pos = geo.attributes.position
-      const i   = Math.floor(Math.random() * pos.count)
-      const base = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i))
-      geo.dispose()
+
+      if (typedCount === 0) {
+        // Anchor on a random surface vertex
+        const geo = SHAPES[idx].geo()
+        const pos = geo.attributes.position
+        const i   = Math.floor(Math.random() * pos.count)
+        typedOrigin = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i))
+        geo.dispose()
+
+        // Direction tangent to surface at that point (perpendicular to radial)
+        const radial    = typedOrigin.clone().normalize()
+        const arbitrary = Math.abs(radial.y) < 0.9
+          ? new THREE.Vector3(0, 1, 0)
+          : new THREE.Vector3(1, 0, 0)
+        typedDir = new THREE.Vector3()
+          .crossVectors(radial, arbitrary)
+          .normalize()
+          .multiplyScalar(CHAR_SPACING)
+      }
+
+      // Place char at cursor position in local (pre-rotation) space
+      const base = typedOrigin.clone().add(typedDir.clone().multiplyScalar(typedCount))
+
       stateRef.current.particles.push({
         base,
-        pos: base.clone().add(new THREE.Vector3(
-          (Math.random() - 0.5) * 0.3,
-          (Math.random() - 0.5) * 0.3,
-          (Math.random() - 0.5) * 0.3,
-        )),
-        vel: new THREE.Vector3(
-          (Math.random() - 0.5) * 0.08,
-          (Math.random() - 0.5) * 0.08,
-          (Math.random() - 0.5) * 0.08,
-        ),
+        pos:   base.clone(),
+        vel:   new THREE.Vector3(),
         char,
         phase: Math.random() * Math.PI * 2,
-        freq:  0.25 + Math.random() * 0.4,  // slow dance → legible
-        amp:   0.02 + Math.random() * 0.03,  // tight to surface
-        hue: 55, sat: 10, lit: 96,           // near-white cream
-        isTyped: true,
+        freq:  0.2 + Math.random() * 0.3,   // slow → legible
+        amp:   0.015 + Math.random() * 0.02, // tight
+        hue: 55, sat: 10, lit: 96,
+        isTyped:   true,
+        typeIndex: typedCount,
       })
+      typedCount++
     }
 
     const onKeyDown = (e) => {
       if (e.key === 'Backspace') {
         const ps = stateRef.current.particles
         for (let i = ps.length - 1; i >= 0; i--) {
-          if (ps[i].isTyped) { ps.splice(i, 1); break }
+          if (ps[i].isTyped) { ps.splice(i, 1); typedCount--; break }
         }
         return
       }
