@@ -255,7 +255,7 @@ export default function AsciiThree() {
   return (
     <div style={{
       width: '100vw', height: '100vh',
-      background: 'radial-gradient(ellipse at 40% 50%, #030c1a 0%, #02060e 60%, #010408 100%)',
+      background: 'radial-gradient(ellipse at 40% 50%, #09244e 0%, #06122a 60%, #030c18 100%)',
       position: 'relative', overflow: 'hidden',
     }}>
       <div ref={mountRef} style={{ position: 'absolute', inset: 0 }} />
