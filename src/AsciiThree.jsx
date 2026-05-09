@@ -207,14 +207,35 @@ export default function AsciiThree() {
     }
 
     // Text cursor state — shared across transitionParticles & spawnTyped
-    let typedStart     = null
-    let typedAxis      = null
+    let typedStart      = null
+    let typedAxis       = null
     let typedSpiralAxis = null
-    let typedCharAngle = 0
-    let typedCount     = 0
+    let typedCharAngle  = 0
+    let typedCount      = 0
     const CHAR_SPACING  = 0.40
     // Shifts text one char-width laterally per full revolution → spiral, no overlap
     const SPIRAL_PITCH  = CHAR_SPACING / (2 * Math.PI)
+
+    // Projection mesh — un-rotated copy used to snap typed chars back onto the surface
+    let projMesh   = null
+    const projCast = new THREE.Raycaster()
+
+    function initProjMesh(idx) {
+      if (projMesh) { projMesh.geometry.dispose(); projMesh.material.dispose() }
+      projMesh = new THREE.Mesh(
+        SHAPES[idx].geo(),
+        new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })
+      )
+    }
+
+    function projectOnShape(pt) {
+      if (!projMesh) return pt
+      const dir = pt.clone().normalize()
+      // Ray from far outside, aimed at origin — hits the shape's outer surface
+      projCast.set(dir.clone().multiplyScalar(20), dir.negate())
+      const hits = projCast.intersectObject(projMesh)
+      return hits.length > 0 ? hits[0].point.clone() : pt
+    }
 
     function makeTypedAxes(anchor) {
       const radial = anchor.clone().normalize()
@@ -228,17 +249,19 @@ export default function AsciiThree() {
 
     function typedBase(n) {
       const angle = n * typedCharAngle
-      return typedStart.clone()
+      const raw = typedStart.clone()
         .applyAxisAngle(typedAxis, angle)
         .addScaledVector(typedSpiralAxis, angle * SPIRAL_PITCH)
+      return projectOnShape(raw)
     }
 
-    function reanchorTyped(pos, vn) {
+    function reanchorTyped(pos, vn, idx) {
       const typedParticles = stateRef.current.particles
         .filter(p => p.isTyped)
         .sort((a, b) => a.typeIndex - b.typeIndex)
       if (typedParticles.length === 0) return
 
+      initProjMesh(idx)
       const i = Math.floor(Math.random() * vn)
       typedStart = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i))
       makeTypedAxes(typedStart)
@@ -263,7 +286,7 @@ export default function AsciiThree() {
           pos.getZ(i) + (Math.random() - 0.5) * 0.15,
         )
       })
-      reanchorTyped(pos, vn)
+      reanchorTyped(pos, vn, idx)
       geo.dispose()
     }
 
@@ -289,6 +312,7 @@ export default function AsciiThree() {
         const i   = Math.floor(Math.random() * pos.count)
         typedStart = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i))
         geo.dispose()
+        initProjMesh(idx)
         makeTypedAxes(typedStart)
       }
 
@@ -348,6 +372,7 @@ export default function AsciiThree() {
       geo.dispose()
       // Reset cursor — next typing starts a fresh spiral sequence
       typedStart = null; typedAxis = null; typedSpiralAxis = null; typedCharAngle = 0; typedCount = 0
+      if (projMesh) { projMesh.geometry.dispose(); projMesh.material.dispose(); projMesh = null }
     }
     renderer.domElement.addEventListener('mousedown', onDown)
     renderer.domElement.addEventListener('mousemove', onMove)
@@ -453,6 +478,7 @@ export default function AsciiThree() {
       renderer.domElement.removeEventListener('mousedown', onDown)
       renderer.domElement.removeEventListener('mousemove', onMove)
       renderer.domElement.removeEventListener('mouseup',   onUp)
+      if (projMesh) { projMesh.geometry.dispose(); projMesh.material.dispose() }
       controls.dispose()
       scene.traverse(c => {
         if (c.geometry) c.geometry.dispose()
