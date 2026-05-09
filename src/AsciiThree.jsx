@@ -14,12 +14,11 @@ const SHAPES = [
 
 const N = 280
 
-// Warm amber/gold palette — distinct from blue bg and teal shapes
 function randomHue() {
   const r = Math.random()
-  if (r < 0.18) return Math.floor(Math.random() * 20)           // red-orange accent
-  if (r < 0.30) return Math.floor(Math.random() * 20 + 50)      // yellow-green accent
-  return Math.floor(Math.random() * 30 + 22)                    // amber/gold dominant
+  if (r < 0.18) return Math.floor(Math.random() * 20)
+  if (r < 0.30) return Math.floor(Math.random() * 20 + 50)
+  return Math.floor(Math.random() * 30 + 22)
 }
 
 function sampleGeo(geo, count) {
@@ -34,33 +33,73 @@ function sampleGeo(geo, count) {
 const SOLID_OPACITY_BASE = 0.2
 const WIRE_OPACITY_BASE  = 0.45
 
-function Slider({ label, value, onChange, max = 2 }) {
+function Knob({ label, value, onChange, min = 0, max = 2 }) {
+  const drag = useRef(null)
+  const SIZE = 64, R = 24, CX = 32, CY = 32
+
+  const norm = Math.max(0, Math.min(1, (value - min) / (max - min)))
+  const startDeg = -135
+  const valueDeg = startDeg + norm * 270
+
+  function polarXY(deg) {
+    const rad = ((deg - 90) * Math.PI) / 180
+    return [CX + R * Math.cos(rad), CY + R * Math.sin(rad)]
+  }
+
+  function arc(a, b) {
+    const [sx, sy] = polarXY(a)
+    const [ex, ey] = polarXY(b)
+    return `M ${sx.toFixed(2)} ${sy.toFixed(2)} A ${R} ${R} 0 ${b - a > 180 ? 1 : 0} 1 ${ex.toFixed(2)} ${ey.toFixed(2)}`
+  }
+
+  function onPointerDown(e) {
+    drag.current = { startY: e.clientY, startValue: value }
+    e.currentTarget.setPointerCapture(e.pointerId)
+    e.stopPropagation()
+  }
+  function onPointerMove(e) {
+    if (!drag.current) return
+    const dy = drag.current.startY - e.clientY
+    onChange(Math.max(min, Math.min(max, drag.current.startValue + (dy / 80) * (max - min))))
+  }
+  function onPointerUp() { drag.current = null }
+
+  const [dotX, dotY] = polarXY(valueDeg)
+
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, cursor: 'pointer' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, userSelect: 'none' }}>
+      <svg
+        width={SIZE} height={SIZE}
+        style={{ cursor: 'ns-resize', filter: 'drop-shadow(0 0 8px rgba(0,220,140,0.55)) drop-shadow(0 0 2px rgba(0,220,140,0.9))' }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+      >
+        <circle cx={CX} cy={CY} r={R + 3} fill="rgba(0,20,12,0.85)" stroke="rgba(0,80,50,0.4)" strokeWidth={1} />
+        <path d={arc(-135, 135)} fill="none" stroke="rgba(0,100,60,0.3)" strokeWidth={4} strokeLinecap="round" />
+        {norm > 0.005 && (
+          <path d={arc(-135, valueDeg)} fill="none" stroke="#00e896" strokeWidth={4} strokeLinecap="round" />
+        )}
+        <circle cx={CX} cy={CY} r={11} fill="rgba(0,30,20,0.9)" stroke="rgba(0,150,80,0.3)" strokeWidth={1} />
+        <circle cx={dotX} cy={dotY} r={3.5} fill="#00e896" />
+        <text x={CX} y={CY + 4} textAnchor="middle" fill="rgba(0,220,140,0.85)" fontSize={9} fontFamily="'Courier New', monospace">{value.toFixed(1)}</text>
+      </svg>
       <span style={{
         fontFamily: "'Courier New', monospace",
-        fontSize: 10, letterSpacing: '0.12em',
+        fontSize: 9, letterSpacing: '0.12em',
         color: 'rgba(120, 200, 140, 0.6)',
         textTransform: 'uppercase',
-      }}>
-        {label}
-      </span>
-      <input
-        type="range" min="0" max={max} step="0.01"
-        value={value}
-        onChange={e => onChange(parseFloat(e.target.value))}
-        style={{ width: 100, accentColor: '#00cc88', cursor: 'pointer' }}
-      />
-    </label>
+      }}>{label}</span>
+    </div>
   )
 }
 
 export default function AsciiThree() {
-  const mountRef    = useRef(null)
-  const overlayRef  = useRef(null)
-  const bgRef       = useRef(null)
-  const stateRef    = useRef({ particles: [], mesh: null, lights: null, solidMat: null, wireMat: null })
-  const brightRef   = useRef({ bg: 1, shapes: 1, text: 1, size: 1.5 })
+  const mountRef   = useRef(null)
+  const overlayRef = useRef(null)
+  const bgRef      = useRef(null)
+  const stateRef   = useRef({ particles: [], mesh: null, lights: null, solidMat: null, wireMat: null })
+  const brightRef  = useRef({ bg: 1, shapes: 1, text: 1, size: 1.5 })
 
   const [active, setActive] = useState(0)
   const [bright, setBright] = useState({ bg: 1, shapes: 1, text: 1, size: 1.5 })
@@ -92,7 +131,9 @@ export default function AsciiThree() {
     controls.enableDamping = true
     controls.dampingFactor = 0.05
 
-    // Lights — stored for brightness control
+    stateRef.current.zoomIn  = () => { camera.position.multiplyScalar(0.85); controls.update() }
+    stateRef.current.zoomOut = () => { camera.position.multiplyScalar(1.18); controls.update() }
+
     const ambient = new THREE.AmbientLight(0xffffff, 0.3)
     scene.add(ambient)
     const dl1 = new THREE.DirectionalLight(0x44ddaa, 1.4)
@@ -165,12 +206,56 @@ export default function AsciiThree() {
       }))
     }
 
+    // Text cursor state — shared across transitionParticles & spawnTyped
+    let typedStart     = null
+    let typedAxis      = null
+    let typedSpiralAxis = null
+    let typedCharAngle = 0
+    let typedCount     = 0
+    const CHAR_SPACING  = 0.40
+    // Shifts text one char-width laterally per full revolution → spiral, no overlap
+    const SPIRAL_PITCH  = CHAR_SPACING / (2 * Math.PI)
+
+    function makeTypedAxes(anchor) {
+      const radial = anchor.clone().normalize()
+      const arbitrary = Math.abs(radial.y) < 0.9
+        ? new THREE.Vector3(0, 1, 0)
+        : new THREE.Vector3(1, 0, 0)
+      typedAxis = new THREE.Vector3().crossVectors(radial, arbitrary).normalize()
+      typedSpiralAxis = new THREE.Vector3().crossVectors(typedAxis, radial).normalize()
+      typedCharAngle = CHAR_SPACING / Math.max(0.5, anchor.length())
+    }
+
+    function typedBase(n) {
+      const angle = n * typedCharAngle
+      return typedStart.clone()
+        .applyAxisAngle(typedAxis, angle)
+        .addScaledVector(typedSpiralAxis, angle * SPIRAL_PITCH)
+    }
+
+    function reanchorTyped(pos, vn) {
+      const typedParticles = stateRef.current.particles
+        .filter(p => p.isTyped)
+        .sort((a, b) => a.typeIndex - b.typeIndex)
+      if (typedParticles.length === 0) return
+
+      const i = Math.floor(Math.random() * vn)
+      typedStart = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i))
+      makeTypedAxes(typedStart)
+
+      typedParticles.forEach((p, n) => {
+        p.base = typedBase(n)
+        p.typeIndex = n
+      })
+      typedCount = typedParticles.length
+    }
+
     function transitionParticles(idx) {
       const geo = SHAPES[idx].geo()
       const pos = geo.attributes.position
       const vn  = pos.count
       stateRef.current.particles.forEach(p => {
-        if (p.isTyped) return  // preserve typed chars' local-space positions
+        if (p.isTyped) return
         const i = Math.floor(Math.random() * vn)
         p.base.set(
           pos.getX(i) + (Math.random() - 0.5) * 0.15,
@@ -178,6 +263,7 @@ export default function AsciiThree() {
           pos.getZ(i) + (Math.random() - 0.5) * 0.15,
         )
       })
+      reanchorTyped(pos, vn)
       geo.dispose()
     }
 
@@ -194,41 +280,19 @@ export default function AsciiThree() {
       buildShape(idx, false)
     }
 
-    // Text cursor — geodesic placement (rotation-based, wraps around surface)
-    let typedStart     = null   // anchor point in local space
-    let typedAxis      = null   // rotation axis (tangent to surface)
-    let typedCharAngle = 0      // radians per character = CHAR_SPACING / radius
-    let typedCount     = 0
-
-    const CHAR_SPACING = 0.40
-
     function spawnTyped(char) {
       const idx = stateRef.current.currentShapeIdx
 
       if (typedCount === 0) {
-        // Anchor on a random surface vertex
         const geo = SHAPES[idx].geo()
         const pos = geo.attributes.position
         const i   = Math.floor(Math.random() * pos.count)
         typedStart = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i))
         geo.dispose()
-
-        // Rotation axis: perpendicular to radial — text curves around the shape
-        const radial    = typedStart.clone().normalize()
-        const arbitrary = Math.abs(radial.y) < 0.9
-          ? new THREE.Vector3(0, 1, 0)
-          : new THREE.Vector3(1, 0, 0)
-        typedAxis = new THREE.Vector3()
-          .crossVectors(radial, arbitrary)
-          .normalize()
-
-        // Arc-length-correct angle: arc = radius × angle → angle = spacing / radius
-        const radius = Math.max(0.5, typedStart.length())
-        typedCharAngle = CHAR_SPACING / radius
+        makeTypedAxes(typedStart)
       }
 
-      // Geodesic: rotate anchor by n × charAngle around axis
-      const base = typedStart.clone().applyAxisAngle(typedAxis, typedCount * typedCharAngle)
+      const base = typedBase(typedCount)
 
       stateRef.current.particles.push({
         base,
@@ -236,8 +300,8 @@ export default function AsciiThree() {
         vel:   new THREE.Vector3(),
         char,
         phase: Math.random() * Math.PI * 2,
-        freq:  0.2 + Math.random() * 0.3,   // slow → legible
-        amp:   0.015 + Math.random() * 0.02, // tight
+        freq:  0.2 + Math.random() * 0.3,
+        amp:   0.015 + Math.random() * 0.02,
         hue: 55, sat: 10, lit: 96,
         isTyped:   true,
         typeIndex: typedCount,
@@ -250,7 +314,7 @@ export default function AsciiThree() {
         e.preventDefault()
         const ps = stateRef.current.particles
         for (let i = ps.length - 1; i >= 0; i--) {
-          if (ps[i].isTyped) { ps.splice(i, 1); typedCount--; break }
+          if (ps[i].isTyped) { ps.splice(i, 1); typedCount = Math.max(0, typedCount - 1); break }
         }
         return
       }
@@ -266,24 +330,32 @@ export default function AsciiThree() {
     const onMove = () => { wasDragging = true }
     const onUp   = () => {
       if (wasDragging) return
+      const geo = SHAPES[stateRef.current.currentShapeIdx].geo()
+      const pos = geo.attributes.position
+      const vn  = pos.count
       stateRef.current.particles.forEach(p => {
         const dir = p.pos.clone()
         if (dir.lengthSq() < 0.001)
           dir.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
         dir.normalize().multiplyScalar(1.8 + Math.random() * 2.2)
         p.vel.add(dir)
+        if (p.isTyped) {
+          // Scramble typed char to a random surface position
+          const i = Math.floor(Math.random() * vn)
+          p.base.set(pos.getX(i), pos.getY(i), pos.getZ(i))
+        }
       })
+      geo.dispose()
+      // Reset cursor — next typing starts a fresh spiral sequence
+      typedStart = null; typedAxis = null; typedSpiralAxis = null; typedCharAngle = 0; typedCount = 0
     }
     renderer.domElement.addEventListener('mousedown', onDown)
     renderer.domElement.addEventListener('mousemove', onMove)
     renderer.domElement.addEventListener('mouseup',   onUp)
 
     function project(p, camDist) {
-      // View-space z for depth: NDC z clusters ~0.97-0.99 for all our particles
-      // (near=0.1, far=100 crushes the useful range), so compute depth directly.
       _viewVec.copy(p.pos).applyMatrix4(camera.matrixWorldInverse)
-      const viewDist = -_viewVec.z  // positive distance along camera forward axis
-      // depth 1 = near face (bright/large), depth 0 = far face (dim/small)
+      const viewDist = -_viewVec.z
       const depth = Math.max(0, Math.min(1, 1 - (viewDist - (camDist - 3.5)) / 7))
       const sv = p.pos.clone().project(camera)
       return { x: (sv.x * 0.5 + 0.5) * W, y: (-sv.y * 0.5 + 0.5) * H, z: sv.z, depth }
@@ -298,7 +370,6 @@ export default function AsciiThree() {
       const { mesh, particles, lights, solidMat, wireMat } = stateRef.current
       const { shapes: sb, text: tb, size: sz } = brightRef.current
 
-      // Shape brightness — lights + material opacity
       if (lights) {
         lights.ambient.intensity = 0.3  * sb
         lights.dl1.intensity     = 1.4  * sb
@@ -327,13 +398,12 @@ export default function AsciiThree() {
       controls.update()
       renderer.render(scene, camera)
 
-      // ASCII overlay
       ctx.clearRect(0, 0, W, H)
       const camDist = camera.position.length()
       const sorted = particles
         .map(p => ({ p, sc: project(p, camDist) }))
         .filter(({ sc }) => sc.z > -1 && sc.z < 1)
-        .sort((a, b) => b.sc.depth - a.sc.depth)  // back (low depth) drawn first
+        .sort((a, b) => b.sc.depth - a.sc.depth)
 
       ctx.shadowBlur = 0
       for (const { p, sc } of sorted) {
@@ -396,7 +466,6 @@ export default function AsciiThree() {
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden' }}>
 
-      {/* Background — isolated so brightness filter doesn't bleed onto canvas */}
       <div
         ref={bgRef}
         style={{
@@ -408,7 +477,6 @@ export default function AsciiThree() {
       <div ref={mountRef} style={{ position: 'absolute', inset: 0, zIndex: 1 }} />
       <canvas ref={overlayRef} style={{ position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none' }} />
 
-      {/* Title */}
       <div style={{
         position: 'absolute', top: 28, left: 32, zIndex: 10,
         fontFamily: "'Courier New', monospace",
@@ -419,7 +487,6 @@ export default function AsciiThree() {
         ASCII ↔ THREE.JS
       </div>
 
-      {/* Instructions */}
       <div style={{
         position: 'absolute', top: 28, right: 32, zIndex: 10,
         fontFamily: "'Courier New', monospace",
@@ -434,19 +501,46 @@ export default function AsciiThree() {
         ⌫ to remove
       </div>
 
-      {/* Brightness sliders */}
+      {/* Knobs */}
       <div style={{
         position: 'absolute', left: 28, top: '50%',
         transform: 'translateY(-50%)',
-        display: 'flex', flexDirection: 'column', gap: 20, zIndex: 10,
+        display: 'flex', flexDirection: 'column', gap: 18, zIndex: 10,
         background: 'rgba(0,0,0,0.25)',
         border: '1px solid rgba(0,220,140,0.12)',
-        borderRadius: 6, padding: '16px 14px',
+        borderRadius: 8, padding: '18px 14px',
       }}>
-        <Slider label="bg"     value={bright.bg}     onChange={v => setBrightKey('bg', v)} />
-        <Slider label="shapes" value={bright.shapes}  onChange={v => setBrightKey('shapes', v)} />
-        <Slider label="text"   value={bright.text}    onChange={v => setBrightKey('text', v)} />
-        <Slider label="size"   value={bright.size}    onChange={v => setBrightKey('size', v)} max={3} />
+        <Knob label="bg"     value={bright.bg}     onChange={v => setBrightKey('bg', v)} />
+        <Knob label="shapes" value={bright.shapes}  onChange={v => setBrightKey('shapes', v)} />
+        <Knob label="text"   value={bright.text}    onChange={v => setBrightKey('text', v)} />
+        <Knob label="size"   value={bright.size}    onChange={v => setBrightKey('size', v)} max={3} />
+      </div>
+
+      {/* Zoom buttons */}
+      <div style={{
+        position: 'absolute', right: 28, bottom: 80,
+        display: 'flex', flexDirection: 'column', gap: 6, zIndex: 10,
+      }}>
+        {[{ sym: '+', fn: 'zoomIn' }, { sym: '−', fn: 'zoomOut' }].map(({ sym, fn }) => (
+          <button
+            key={sym}
+            tabIndex={-1}
+            onClick={() => stateRef.current[fn]?.()}
+            style={{
+              width: 36, height: 36,
+              background: 'rgba(0,200,120,0.08)',
+              border: '1px solid rgba(0,200,120,0.3)',
+              color: 'rgba(0,220,140,0.8)',
+              borderRadius: 4, cursor: 'pointer',
+              fontFamily: "'Courier New', monospace",
+              fontSize: 20, lineHeight: 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'all 0.15s',
+            }}
+          >
+            {sym}
+          </button>
+        ))}
       </div>
 
       {/* Shape buttons */}
