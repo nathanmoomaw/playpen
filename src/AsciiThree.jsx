@@ -206,17 +206,16 @@ export default function AsciiThree() {
       }))
     }
 
-    // Text cursor state — shared across transitionParticles & spawnTyped
-    let typedStart      = null
-    let typedAxis       = null
-    let typedSpiralAxis = null
-    let typedCharAngle  = 0
-    let typedCount      = 0
-    const CHAR_SPACING  = 0.40
-    // Shifts text one char-width laterally per full revolution → spiral, no overlap
-    const SPIRAL_PITCH  = CHAR_SPACING / (2 * Math.PI)
+    // Text cursor state — progressive surface walk, shared by spawnTyped & reanchorTyped
+    let typedStart   = null
+    let typedCount   = 0
+    let typedPoints  = []   // surface positions already placed (one per typed char)
+    let typedWalkDir = null // current unit tangent at the tip of the path
 
-    // Projection mesh — un-rotated copy used to snap typed chars back onto the surface
+    const CHAR_SPACING = 0.40
+    const STEER_ANGLE  = 0.05 // radians of spiral steering per step (≈3°/char)
+
+    // Un-rotated projection mesh — rays hit geometry in local (= identity world) space
     let projMesh   = null
     const projCast = new THREE.Raycaster()
 
@@ -228,31 +227,44 @@ export default function AsciiThree() {
       )
     }
 
-    function projectOnShape(pt) {
-      if (!projMesh) return pt
+    // Snap pt to the shape's outer surface; return surface position + outward normal
+    function surfaceHit(pt) {
+      if (!projMesh) return { pos: pt.clone(), normal: pt.clone().normalize() }
       const dir = pt.clone().normalize()
-      // Ray from far outside, aimed at origin — hits the shape's outer surface
       projCast.set(dir.clone().multiplyScalar(20), dir.negate())
       const hits = projCast.intersectObject(projMesh)
-      return hits.length > 0 ? hits[0].point.clone() : pt
+      if (hits.length > 0) {
+        const normal = hits[0].face.normal.clone().normalize()
+        if (normal.dot(dir) < 0) normal.negate()
+        return { pos: hits[0].point.clone(), normal }
+      }
+      return { pos: pt.clone(), normal: dir }
     }
 
-    function makeTypedAxes(anchor) {
-      const radial = anchor.clone().normalize()
-      const arbitrary = Math.abs(radial.y) < 0.9
-        ? new THREE.Vector3(0, 1, 0)
-        : new THREE.Vector3(1, 0, 0)
-      typedAxis = new THREE.Vector3().crossVectors(radial, arbitrary).normalize()
-      typedSpiralAxis = new THREE.Vector3().crossVectors(typedAxis, radial).normalize()
-      typedCharAngle = CHAR_SPACING / Math.max(0.5, anchor.length())
+    // Step the path forward one character; returns the new surface position
+    function stepWalk() {
+      if (typedPoints.length === 0) {
+        // First char: anchor at typedStart, init walking direction
+        const { pos, normal } = surfaceHit(typedStart)
+        const arb = Math.abs(normal.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)
+        typedWalkDir = new THREE.Vector3().crossVectors(normal, arb).normalize()
+        typedPoints.push(pos)
+        return pos.clone()
+      }
+      const prev = typedPoints[typedPoints.length - 1]
+      const tentative = prev.clone().addScaledVector(typedWalkDir, CHAR_SPACING)
+      const { pos, normal } = surfaceHit(tentative)
+      // Parallel transport: re-project dir onto the tangent plane at the new surface point
+      typedWalkDir.addScaledVector(normal, -typedWalkDir.dot(normal)).normalize()
+      // Spiral: steer the direction around the surface normal each step
+      typedWalkDir.applyAxisAngle(normal, STEER_ANGLE)
+      typedPoints.push(pos)
+      return pos.clone()
     }
 
-    function typedBase(n) {
-      const angle = n * typedCharAngle
-      const raw = typedStart.clone()
-        .applyAxisAngle(typedAxis, angle)
-        .addScaledVector(typedSpiralAxis, angle * SPIRAL_PITCH)
-      return projectOnShape(raw)
+    function resetTypedCursor() {
+      typedStart = null; typedCount = 0; typedPoints = []; typedWalkDir = null
+      if (projMesh) { projMesh.geometry.dispose(); projMesh.material.dispose(); projMesh = null }
     }
 
     function reanchorTyped(pos, vn, idx) {
@@ -264,10 +276,10 @@ export default function AsciiThree() {
       initProjMesh(idx)
       const i = Math.floor(Math.random() * vn)
       typedStart = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i))
-      makeTypedAxes(typedStart)
+      typedPoints = []; typedWalkDir = null
 
       typedParticles.forEach((p, n) => {
-        p.base = typedBase(n)
+        p.base = stepWalk()
         p.typeIndex = n
       })
       typedCount = typedParticles.length
@@ -313,10 +325,10 @@ export default function AsciiThree() {
         typedStart = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i))
         geo.dispose()
         initProjMesh(idx)
-        makeTypedAxes(typedStart)
+        typedPoints = []; typedWalkDir = null
       }
 
-      const base = typedBase(typedCount)
+      const base = stepWalk()
 
       stateRef.current.particles.push({
         base,
@@ -338,8 +350,10 @@ export default function AsciiThree() {
         e.preventDefault()
         const ps = stateRef.current.particles
         for (let i = ps.length - 1; i >= 0; i--) {
-          if (ps[i].isTyped) { ps.splice(i, 1); typedCount = Math.max(0, typedCount - 1); break }
+          if (ps[i].isTyped) { ps.splice(i, 1); break }
         }
+        typedCount = Math.max(0, typedCount - 1)
+        if (typedPoints.length > 0) typedPoints.pop()
         return
       }
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -370,9 +384,7 @@ export default function AsciiThree() {
         }
       })
       geo.dispose()
-      // Reset cursor — next typing starts a fresh spiral sequence
-      typedStart = null; typedAxis = null; typedSpiralAxis = null; typedCharAngle = 0; typedCount = 0
-      if (projMesh) { projMesh.geometry.dispose(); projMesh.material.dispose(); projMesh = null }
+      resetTypedCursor()
     }
     renderer.domElement.addEventListener('mousedown', onDown)
     renderer.domElement.addEventListener('mousemove', onMove)
